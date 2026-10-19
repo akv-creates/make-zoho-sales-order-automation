@@ -1,0 +1,22 @@
+# Three fictional test orders used by the dry-run harness. Replace the products with items that
+# exist in YOUR Zoho Books catalog. Format: "name-size-quantity", one product per line.
+
+--- Order A: sizes given, brand line first -------------------------------------
+Customer: Green Valley Mart
+Address: Station Road, Riverside
+* Acme Foods
+Instant Oats-900gm-4pc
+Nut & Berri-400gm-4pc
+Dark chocolate Granola-1kg-4pc
+
+--- Order B: no sizes (the app must not invent one) -----------------------------
+Customer: Lotus Wellness Clinic
+Aloe vera 4
+Mint 4
+Rose water 4
+
+--- Order C: typos + phone number ---------------------------------------------
+Customer: Sai General Store
+Phone: 9XXXXXXXXX
+Charcol brush 12
+Santdard brush 12
