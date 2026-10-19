@@ -1,0 +1,907 @@
+{
+  "name": "DRY RUN - order intelligence layer (no Zoho orders)",
+  "metadata": {
+    "instant": true,
+    "version": 1,
+    "scenario": {
+      "dlq": false,
+      "slots": null,
+      "dataloss": false,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "roundtrips": 1,
+      "sequential": false,
+      "confidential": false,
+      "freshVariables": false,
+      "autoCommitTriggerLast": true
+    }
+  },
+  "flow": [
+    {
+      "id": 899,
+      "mapper": {
+        "scope": "roundtrip",
+        "variables": [
+          {
+            "name": "start",
+            "value": "go"
+          }
+        ]
+      },
+      "module": "util:SetVariables",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 900,
+      "mapper": {
+        "array": "{{split(\"Customer: Green Valley Mart\nAddress: Station Road, Riverside\n* Acme Foods\nInstant Oats-900gm-4pc\nHigh Protein Oats-400gm-4pc\nNo Added Sugar-400gm-4pc\nNAS-1kg-4pc\nDark Chocolate muesli -1kg-4pc\nNut & Berri-400gm-4pc\nNut & Berri-1kg-4pc\nDark chocolate Granola-400gm-4pc\nDark chocolate Granola-1kg-4pc\nChocolate High Protein Muesli 28gm-400gm-4pc\nFruit and Nut High Protein Muesli 28gm-400gm-4pc\nChocolate High Protein Muesli 28gm-1kg-2pc\nFruit and Nut High Protein Muesli 28gm-1kg-2pc\nFruity Delight Muesli -750gm-4pc§Customer: Lotus Wellness Clinic\nAloe vera 4\nSandalwood 4\nMint 4\nRose water 4\nHoney 4\nLavender 4\nNeem charcoal 4\nMix fruit 4\nRose mery 4§Customer: Sai General Store\nAddress: Near Central Plaza, Main Road\nPhone: 9XXXXXXXXX\nCharcol brush 12\nNano brush 12\nSantdard brush 12\"; \"§\")}}"
+      },
+      "module": "builtin:BasicFeeder",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 1000,
+      "mapper": {
+        "input": "ORDER TEXT:\n{{900.value}}\n\nFORM VALUES (use only if the text has none): none\n\nYou are the ORDER PARSER of a sales-order automation. A person typed this order in a hurry, so expect spelling mistakes, abbreviations, inconsistent punctuation, sizes, pack counts and 10-30 product lines. Your ONLY job is to structure the text and to prepare good RETRIEVAL terms. Do NOT match anything to a product catalog, do NOT decide the final item, and do NOT correct the spelling of the product text.\n\nOUTPUT FIELDS\n- customer_name, customer_phone, customer_address: read them from header lines such as 'Customer:', 'Address:', 'Phone:', 'Client Name :' or from lines that are plainly a shop name / an address / a phone number. If the text has none, use the FORM VALUES below when given, otherwise leave empty. These lines are NEVER products.\n- order_context: fill ONLY when the order itself states one product category for all items (for example a heading such as 'Soaps'). Otherwise leave it empty. Never guess a category.\n- brand_hint: ONLY when the order text contains a short standalone line naming a brand for the WHOLE order, written like '* <Brand>', 'Brand: <Brand>' or 'Brand - <Brand>' and appearing BEFORE the product lines (not inside a product name). Put just the brand name, for example 'Acme Foods'. That line is NEVER a product line and NEVER counts toward total_items_count. Otherwise leave empty. Never guess a brand from product text.\n- lines: ONE entry per ordered product, in the original order. Never drop, merge or split products; different sizes/variants of the same product are different lines. Entries are separated ONLY by the character § (never by a line break); no numbering, bullets or blank entries. Example of two entries: a|b|c|d|e|f|g§h|i|j|k|l|m|n. Each entry has exactly seven fields separated by the pipe character | in this order:\n  term_a|term_b|term_c|product_text|package_size|normalized_size|quantity\n  Every field must be filled. When a field has no value write NONE (never leave it empty and never use the pipe inside a field).\n\nFIELD RULES\n1. term_a and term_b are RETRIEVAL words. The catalog is searched separately for term_a and for term_b (a substring search on item names) and the results are combined, so choose them so that the correct catalog item contains at least ONE of them even if the other is misspelled or worded differently in the catalog. Retrieve broadly; the comparator that runs afterwards decides precisely.\n   - term_a: one lower-case word or word-stem (3-8 letters) that is the product-type noun or the most distinctive core word of the product (for example muesli, granola, oats, brush, soap, ketchup). If the word may be misspelled or abbreviated, cut it at the safe part (for example 'Charcol' -> char, 'Berri' -> berr). If the whole line is an abbreviation or initialism, use the distinctive word of its most likely expansion.\n   - term_b: a DIFFERENT lower-case word or stem (3-8 letters) that carries a variant/flavour/modifier or a second key noun of the product. NONE if the product has only one meaningful word.\n   - Never use a brand name, a size, a number, or filler such as pack, piece, pcs, mrp.\n2. term_c: ONLY when the line contains an obvious spelling mistake, write the plainly corrected lower-case word (for example charcol -> charcoal, santdard -> standard). It is used only if searching term_a and term_b returns nothing; it may also be a plain alternative spelling of an ingredient or product word (alvera -> aloe, rose mery -> rosemary). Otherwise NONE. Do not invent a different product.\n3. product_text: the product name exactly as typed (spelling untouched) INCLUDING every number and unit that is part of the name (28gm, 3in1, No.1). Numbers inside a product name stay in product_text. The ORDERED QUANTITY is never part of product_text: a trailing number or '4pc', 'x4', 'qty 4' after the name is the quantity (examples: 'Alvera 4' -> product_text 'Alvera', quantity 4; 'Charcol brush 12' -> product_text 'Charcol brush', quantity 12).\n4. package_size: only the size/pack the customer orders, exactly as typed (for example 1kg, 400gm, 250 ml). It is normally a separate segment (separated by '-', '/', '|', brackets or 'x') that comes AFTER the product name and BEFORE the quantity. If a line has two size-like tokens, the LAST one before the quantity is the package_size and the earlier one stays in product_text (example: 'Protein Muesli 28gm-400gm-4pc' -> product_text 'Protein Muesli 28gm', package_size '400gm'). If only one size-like token exists and it is glued into the product name without a separator, keep it in product_text and write NONE. Never invent a size. Decide from the whole line, not from a simple number+unit pattern.\n5. normalized_size: the package_size converted to grams as '<number>g' or to millilitres as '<number>ml' (1kg, 1 kg, 1000gm, 1000 g -> 1000g; 400gm, 400g, 0.4kg -> 400g; 1 ltr, 1L -> 1000ml). NONE when package_size is NONE. Never change product_text.\n6. quantity: units ordered, digits only ('4pc', '4 pcs', 'x4', a trailing '4' all mean 4). 'pc', 'pcs', 'piece' are units, never sizes. Use 1 when nothing is written.\n\nGENERIC EXAMPLES OF THE FORMAT\nRagi Cookis-200gm-6pc  ->  cook|ragi|NONE|Ragi Cookis|200gm|200g|6\nTomatoe ketchup 3  ->  ketch|tomat|NONE|Tomatoe ketchup|NONE|NONE|3\nOrange Squash 1L-2pc  ->  squash|orange|NONE|Orange Squash|1L|1000ml|2\nProtein Bar 20gm-30gm-12pc  ->  bar|protein|NONE|Protein Bar 20gm|30gm|30g|12",
+        "fields": [
+          {
+            "name": "customer_name",
+            "type": "string",
+            "description": "The customer / shop this order is for. Empty if none."
+          },
+          {
+            "name": "customer_phone",
+            "type": "string",
+            "description": "Customer phone number as written. Empty if none."
+          },
+          {
+            "name": "customer_address",
+            "type": "string",
+            "description": "Customer address as written. Empty if none."
+          },
+          {
+            "name": "order_context",
+            "type": "string",
+            "description": "Only if the order explicitly names one product category for all items; otherwise empty."
+          },
+          {
+            "name": "brand_hint",
+            "type": "string",
+            "description": "A standalone brand line for the whole order (e.g. '* Acme Foods'), if present; otherwise empty."
+          },
+          {
+            "name": "lines",
+            "type": "string",
+            "description": "One entry per ordered product, entries separated by the character §: term_a|term_b|term_c|product_text|package_size|normalized_size|quantity, NONE for empty fields."
+          },
+          {
+            "name": "total_items_count",
+            "type": "number",
+            "description": "Number of product lines"
+          }
+        ]
+      },
+      "module": "ai-tools:Extract",
+      "version": 2,
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "model": "large",
+        "makeConnectionId": 0
+      }
+    },
+    {
+      "id": 1001,
+      "mapper": {
+        "scope": "roundtrip",
+        "variables": [
+          {
+            "name": "shop_name",
+            "value": "{{trim(replace(1000.information.customer_name; \"&amp;\"; \"&\"))}}"
+          },
+          {
+            "name": "phone",
+            "value": "{{trim(1000.information.customer_phone)}}"
+          },
+          {
+            "name": "address",
+            "value": "{{trim(1000.information.customer_address)}}"
+          }
+        ]
+      },
+      "module": "util:SetVariables",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 150,
+          "y": 0
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 1020,
+      "mapper": {
+        "limit": "40",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "contact_name",
+              "b": "{{ifempty(substring(trim(replace(1001.shop_name; \"  \"; \" \")); 0; 90); \"ZZZNOMATCHZZZ\")}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "contact_type": "customer",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listContacts",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 300,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1021,
+      "filter": {
+        "name": "Real customer",
+        "conditions": [
+          [
+            {
+              "a": "{{1020.contact_id}}",
+              "o": "exist"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "N{{1020.__IMTINDEX__}}",
+        "line": "N{{1020.__IMTINDEX__}} | {{1020.contact_name}} | {{1020.company_name}} | {{1020.phone}} | {{1020.mobile}}",
+        "contact_id": "{{1020.contact_id}}",
+        "contact_name": "{{1020.contact_name}}",
+        "company_name": "{{1020.company_name}}",
+        "phone": "{{1020.phone}}",
+        "mobile": "{{1020.mobile}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 450,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1020
+      }
+    },
+    {
+      "id": 1022,
+      "mapper": {
+        "limit": "40",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "contact_name",
+              "b": "{{if(length(1021.array) > 0; \"ZZZNOMATCHZZZ\"; ifempty(substring(replace(trim(replace(1001.shop_name; \"  \"; \" \")); \" and \"; \" & \"); 0; 90); \"ZZZNOMATCHZZZ\"))}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "contact_type": "customer",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listContacts",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 600,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1023,
+      "filter": {
+        "name": "Real customer",
+        "conditions": [
+          [
+            {
+              "a": "{{1022.contact_id}}",
+              "o": "exist"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "R{{1022.__IMTINDEX__}}",
+        "line": "R{{1022.__IMTINDEX__}} | {{1022.contact_name}} | {{1022.company_name}} | {{1022.phone}} | {{1022.mobile}}",
+        "contact_id": "{{1022.contact_id}}",
+        "contact_name": "{{1022.contact_name}}",
+        "company_name": "{{1022.company_name}}",
+        "phone": "{{1022.phone}}",
+        "mobile": "{{1022.mobile}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 750,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1022
+      }
+    },
+    {
+      "id": 1024,
+      "mapper": {
+        "limit": "40",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "contact_name",
+              "b": "{{if(length(1021.array) + length(1023.array) > 0; \"ZZZNOMATCHZZZ\"; ifempty(trim(get(split(replace(replace(replace(1001.shop_name; \"&\"; \" \"); \"-\"; \" \"); \"  \"; \" \"); \" \"); 1)) + \" \" + trim(get(split(replace(replace(replace(1001.shop_name; \"&\"; \" \"); \"-\"; \" \"); \"  \"; \" \"); \" \"); 2)); \"ZZZNOMATCHZZZ\"))}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "contact_type": "customer",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listContacts",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 900,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1025,
+      "filter": {
+        "name": "Real customer",
+        "conditions": [
+          [
+            {
+              "a": "{{1024.contact_id}}",
+              "o": "exist"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "T{{1024.__IMTINDEX__}}",
+        "line": "T{{1024.__IMTINDEX__}} | {{1024.contact_name}} | {{1024.company_name}} | {{1024.phone}} | {{1024.mobile}}",
+        "contact_id": "{{1024.contact_id}}",
+        "contact_name": "{{1024.contact_name}}",
+        "company_name": "{{1024.company_name}}",
+        "phone": "{{1024.phone}}",
+        "mobile": "{{1024.mobile}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1050,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1024
+      }
+    },
+    {
+      "id": 1026,
+      "mapper": {
+        "limit": "40",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "contact_name",
+              "b": "{{if(length(1021.array) + length(1023.array) + length(1025.array) > 0; \"ZZZNOMATCHZZZ\"; ifempty(trim(get(split(replace(replace(replace(1001.shop_name; \"&\"; \" \"); \"-\"; \" \"); \"  \"; \" \"); \" \"); 1)); \"ZZZNOMATCHZZZ\"))}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "contact_type": "customer",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listContacts",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1200,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1027,
+      "filter": {
+        "name": "Real customer",
+        "conditions": [
+          [
+            {
+              "a": "{{1026.contact_id}}",
+              "o": "exist"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "Fw{{1026.__IMTINDEX__}}",
+        "line": "Fw{{1026.__IMTINDEX__}} | {{1026.contact_name}} | {{1026.company_name}} | {{1026.phone}} | {{1026.mobile}}",
+        "contact_id": "{{1026.contact_id}}",
+        "contact_name": "{{1026.contact_name}}",
+        "company_name": "{{1026.company_name}}",
+        "phone": "{{1026.phone}}",
+        "mobile": "{{1026.mobile}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1350,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1026
+      }
+    },
+    {
+      "id": 1028,
+      "mapper": {
+        "limit": "40",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "phone",
+              "b": "{{if(length(replace(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); \".\"; \"\")) > 8; substring(replace(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); \".\"; \"\"); length(replace(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); \".\"; \"\")) - 9; length(replace(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); \".\"; \"\"))); \"ZZZNOMATCHZZZ\")}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "contact_type": "customer",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listContacts",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1500,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1029,
+      "filter": {
+        "name": "Real customer",
+        "conditions": [
+          [
+            {
+              "a": "{{1028.contact_id}}",
+              "o": "exist"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "P{{1028.__IMTINDEX__}}",
+        "line": "P{{1028.__IMTINDEX__}} | {{1028.contact_name}} | {{1028.company_name}} | {{1028.phone}} | {{1028.mobile}}",
+        "contact_id": "{{1028.contact_id}}",
+        "contact_name": "{{1028.contact_name}}",
+        "company_name": "{{1028.company_name}}",
+        "phone": "{{1028.phone}}",
+        "mobile": "{{1028.mobile}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1650,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1028
+      }
+    },
+    {
+      "id": 1030,
+      "mapper": {
+        "input": "ORDERED CUSTOMER\nName as typed: {{1001.shop_name}}\nPhone: {{1001.phone}}\nAddress: {{1001.address}}\n\nCANDIDATES FROM SEARCH 'full name':\n{{ifempty(join(map(1021.array; \"line\"); \"\\n\"); \"(none)\")}}\n\nCANDIDATES FROM SEARCH 'relaxed name (and/&)':\n{{ifempty(join(map(1023.array; \"line\"); \"\\n\"); \"(none)\")}}\n\nCANDIDATES FROM SEARCH 'two words':\n{{ifempty(join(map(1025.array; \"line\"); \"\\n\"); \"(none)\")}}\n\nCANDIDATES FROM SEARCH 'first word':\n{{ifempty(join(map(1027.array; \"line\"); \"\\n\"); \"(none)\")}}\n\nCANDIDATES FROM SEARCH 'phone':\n{{ifempty(join(map(1029.array; \"line\"); \"\\n\"); \"(none)\")}}\n\nYou are the CUSTOMER MATCHER of a sales-order automation. Decide which existing Zoho customer the order is for. Candidates are the ONLY valid answers; never invent one.\n\nCandidate format: ref | contact name | company name | phone | mobile. The candidate lists come from several searches (full name, relaxed name, two words, first word, phone) - the same customer can appear more than once.\n\nRULES\n1. Phone is a strong identifier: compare the last 9-10 digits ignoring spaces, +91, dashes and brackets. If exactly one customer has the same phone or mobile and its name is not clearly a different business, answer MATCHED.\n2. Otherwise compare the normalised names: ignore case, punctuation, '&' versus 'and', singular/plural (Store/Stores), 'Pvt', 'Ltd', 'The'. Use the address when a candidate contains a place name. A spelling variant of the SAME word counts (Centre/Center, Chemist/Chemist's); a DIFFERENT word does not, even if related or similar-sounding - 'Central' is not a spelling variant of 'Centre', they are different words with different meanings, so 'Lakeview Centre Mart' and 'Lakeview Central Mart' are NOT the same business on name alone.\n3. Two DIFFERENT businesses that merely have similar names must never be merged. If more than one customer is plausible, or the only candidate could be a different business, answer AMBIGUOUS. If nothing fits or there are no candidates, answer NOT_FOUND.\n4. confidence: HIGH when the whole name (or the phone) clearly agrees; MEDIUM when only spelling variants agree; LOW otherwise. MATCHED must be HIGH or MEDIUM.\n5. chosen_ref: ref of the selected customer (empty unless MATCHED). alternatives: up to 3 refs with names when AMBIGUOUS. reason: one short sentence.\n6. A DOWNSTREAM CHECK after you answer will independently verify your MATCHED choice against an exact normalised-name match or a phone match, and will downgrade to AMBIGUOUS if neither holds - so answer MATCHED only when you are confident the name is effectively exact (not just similar) or the phone/mobile matches.",
+        "fields": [
+          {
+            "name": "decision",
+            "type": "string",
+            "description": "Exactly one of: MATCHED, AMBIGUOUS, NOT_FOUND"
+          },
+          {
+            "name": "chosen_ref",
+            "type": "string",
+            "description": "Ref of the selected customer when MATCHED, otherwise empty"
+          },
+          {
+            "name": "confidence",
+            "type": "string",
+            "description": "Exactly one of: HIGH, MEDIUM, LOW"
+          },
+          {
+            "name": "alternatives",
+            "type": "string",
+            "description": "When AMBIGUOUS up to 3 refs with names separated by ' || ', otherwise empty"
+          },
+          {
+            "name": "reason",
+            "type": "string",
+            "description": "One short sentence"
+          }
+        ]
+      },
+      "module": "ai-tools:Extract",
+      "version": 2,
+      "metadata": {
+        "designer": {
+          "x": 1800,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "model": "large",
+        "makeConnectionId": 0
+      }
+    },
+    {
+      "id": 1031,
+      "mapper": {
+        "scope": "roundtrip",
+        "variables": [
+          {
+            "name": "chosen_cname",
+            "value": "{{if(1030.information.decision = \"MATCHED\"; ifempty(first(map(1021.array; \"contact_name\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1023.array; \"contact_name\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1025.array; \"contact_name\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1027.array; \"contact_name\"; \"ref\"; trim(1030.information.chosen_ref))); first(map(1029.array; \"contact_name\"; \"ref\"; trim(1030.information.chosen_ref))))))); \"\")}}"
+          },
+          {
+            "name": "chosen_company",
+            "value": "{{if(1030.information.decision = \"MATCHED\"; ifempty(first(map(1021.array; \"company_name\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1023.array; \"company_name\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1025.array; \"company_name\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1027.array; \"company_name\"; \"ref\"; trim(1030.information.chosen_ref))); first(map(1029.array; \"company_name\"; \"ref\"; trim(1030.information.chosen_ref))))))); \"\")}}"
+          },
+          {
+            "name": "chosen_id",
+            "value": "{{if(1030.information.decision = \"MATCHED\"; ifempty(first(map(1021.array; \"contact_id\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1023.array; \"contact_id\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1025.array; \"contact_id\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1027.array; \"contact_id\"; \"ref\"; trim(1030.information.chosen_ref))); first(map(1029.array; \"contact_id\"; \"ref\"; trim(1030.information.chosen_ref))))))); \"\")}}"
+          },
+          {
+            "name": "chosen_phone",
+            "value": "{{if(1030.information.decision = \"MATCHED\"; ifempty(first(map(1021.array; \"phone\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1023.array; \"phone\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1025.array; \"phone\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1027.array; \"phone\"; \"ref\"; trim(1030.information.chosen_ref))); first(map(1029.array; \"phone\"; \"ref\"; trim(1030.information.chosen_ref))))))); \"\")}}"
+          },
+          {
+            "name": "chosen_mobile",
+            "value": "{{if(1030.information.decision = \"MATCHED\"; ifempty(first(map(1021.array; \"mobile\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1023.array; \"mobile\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1025.array; \"mobile\"; \"ref\"; trim(1030.information.chosen_ref))); ifempty(first(map(1027.array; \"mobile\"; \"ref\"; trim(1030.information.chosen_ref))); first(map(1029.array; \"mobile\"; \"ref\"; trim(1030.information.chosen_ref))))))); \"\")}}"
+          }
+        ]
+      },
+      "module": "util:SetVariables",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1800,
+          "y": 150
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 1032,
+      "mapper": {
+        "scope": "roundtrip",
+        "variables": [
+          {
+            "name": "n_shop",
+            "value": "{{replace(replace(replace(replace(replace(replace(replace(lower(trim(1001.shop_name)); \" & \"; \" and \"); \",\"; \"\"); \".\"; \"\"); \"'\"; \"\"); \"-\"; \" \"); \"  \"; \" \"); \"stores\"; \"store\")}}"
+          },
+          {
+            "name": "n_cname",
+            "value": "{{replace(replace(replace(replace(replace(replace(replace(lower(trim(1031.chosen_cname)); \" & \"; \" and \"); \",\"; \"\"); \".\"; \"\"); \"'\"; \"\"); \"-\"; \" \"); \"  \"; \" \"); \"stores\"; \"store\")}}"
+          },
+          {
+            "name": "n_company",
+            "value": "{{replace(replace(replace(replace(replace(replace(replace(lower(trim(1031.chosen_company)); \" & \"; \" and \"); \",\"; \"\"); \".\"; \"\"); \"'\"; \"\"); \"-\"; \" \"); \"  \"; \" \"); \"stores\"; \"store\")}}"
+          },
+          {
+            "name": "order_phone_key",
+            "value": "{{if(length(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\")) > 8; substring(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); length(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\")) - 9; length(replace(replace(replace(replace(replace(1001.phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"))); \"ZZZNOMATCHZZZ\")}}"
+          },
+          {
+            "name": "cand_phone_key",
+            "value": "{{if(length(replace(replace(replace(replace(replace(1031.chosen_phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\")) > 8; substring(replace(replace(replace(replace(replace(1031.chosen_phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); length(replace(replace(replace(replace(replace(1031.chosen_phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\")) - 9; length(replace(replace(replace(replace(replace(1031.chosen_phone; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"))); \"YYYNOMATCHYYY\")}}"
+          },
+          {
+            "name": "cand_mobile_key",
+            "value": "{{if(length(replace(replace(replace(replace(replace(1031.chosen_mobile; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\")) > 8; substring(replace(replace(replace(replace(replace(1031.chosen_mobile; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"); length(replace(replace(replace(replace(replace(1031.chosen_mobile; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\")) - 9; length(replace(replace(replace(replace(replace(1031.chosen_mobile; \" \"; \"\"); \"+\"; \"\"); \"-\"; \"\"); \"(\"; \"\"); \")\"; \"\"))); \"XXXNOMATCHXXX\")}}"
+          }
+        ]
+      },
+      "module": "util:SetVariables",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1800,
+          "y": 300
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 1033,
+      "mapper": {
+        "scope": "roundtrip",
+        "variables": [
+          {
+            "name": "name_exact",
+            "value": "{{if(1032.n_shop = 1032.n_cname; true; if(length(1031.chosen_company) > 0; 1032.n_shop = 1032.n_company; false))}}"
+          },
+          {
+            "name": "phone_ok",
+            "value": "{{if(1032.order_phone_key = \"ZZZNOMATCHZZZ\"; false; if(1032.order_phone_key = 1032.cand_phone_key; true; 1032.order_phone_key = 1032.cand_mobile_key))}}"
+          }
+        ]
+      },
+      "module": "util:SetVariables",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1800,
+          "y": 450
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 1011,
+      "mapper": {
+        "key": "DRYc_{{1001.shop_name}}",
+        "data": {
+          "c1": "{{1001.shop_name + \" | \" + 1001.phone + \" | \" + 1001.address}}",
+          "c2": "{{\"N=\"+length(1021.array)+\" R=\"+length(1023.array)+\" T=\"+length(1025.array)+\" F=\"+length(1027.array)+\" P=\"+length(1029.array)}}",
+          "c3": "{{join(merge(map(1021.array; \"line\"); map(1023.array; \"line\"); map(1025.array; \"line\"); map(1027.array; \"line\"); map(1029.array; \"line\")); \" ## \")}}",
+          "c4": "{{if(1030.information.decision = \"MATCHED\"; if(1033.name_exact = true; \"MATCHED\"; if(1033.phone_ok = true; \"MATCHED\"; \"AMBIGUOUS\")); 1030.information.decision) + \" / \" + 1030.information.confidence}}",
+          "c5": "{{if(1030.information.decision = \"MATCHED\"; if(1033.name_exact = true; 1031.chosen_cname; if(1033.phone_ok = true; 1031.chosen_cname; \"\")); \"\")}}",
+          "c6": "{{if(1030.information.decision = \"MATCHED\"; if(1033.name_exact = false; if(1033.phone_ok = false; \"AI said MATCHED to '\"+1031.chosen_cname+\"' but name not exact and no phone match -> downgraded. \"; \"\"); \"\"); \"\") + 1030.information.reason + \" || alt: \" + 1030.information.alternatives}}",
+          "run": "DRY",
+          "seq": 0,
+          "kind": "customer"
+        },
+        "overwrite": true
+      },
+      "module": "datastore:AddRecord",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1800,
+          "y": 750
+        }
+      },
+      "parameters": {
+        "datastore": 0
+      }
+    },
+    {
+      "id": 1012,
+      "mapper": {
+        "key": "DRYp_{{1001.shop_name}}",
+        "data": {
+          "c1": "{{1000.information.lines}}",
+          "c2": "{{1000.information.order_context}}",
+          "c3": "{{1000.information.total_items_count}}",
+          "run": "DRY",
+          "seq": 0,
+          "kind": "parse"
+        },
+        "overwrite": true
+      },
+      "module": "datastore:AddRecord",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 1950,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "datastore": 0
+      }
+    },
+    {
+      "id": 1002,
+      "mapper": {
+        "array": "{{split(replace(1000.information.lines; \"&amp;\"; \"&\"); \"§\")}}"
+      },
+      "module": "builtin:BasicFeeder",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 2100,
+          "y": 0
+        }
+      },
+      "parameters": {}
+    },
+    {
+      "id": 1040,
+      "filter": {
+        "name": "Line has content",
+        "conditions": [
+          [
+            {
+              "a": "{{length(trim(1002.value))}}",
+              "b": "6",
+              "o": "number:greater"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "limit": "150",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "name",
+              "b": "{{if(lower(trim(first(split(1002.value; \"|\")))) = \"none\"; \"ZZZNOMATCHZZZ\"; substring(trim(first(split(1002.value; \"|\"))); 0; 40))}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "sort_column": "name",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listItems",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 2250,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1041,
+      "filter": {
+        "name": "Active items only",
+        "conditions": [
+          [
+            {
+              "a": "{{1040.status}}",
+              "b": "active",
+              "o": "text:equal"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "A{{1040.__IMTINDEX__}}",
+        "line": "A{{1040.__IMTINDEX__}} | {{1040.name}} | sku={{1040.sku}} | rate={{1040.rate}} | tax={{1040.tax_percentage}} | hsn={{1040.hsn_or_sac}} | brand={{1040.cf_brand}} | mrp={{1040.cf_mrp}} | id={{1040.item_id}} | created={{substring(1040.created_time; 0; 10)}}",
+        "name": "{{1040.name}}",
+        "tax_id": "{{1040.tax_id}}",
+        "item_id": "{{1040.item_id}}",
+        "tax_name": "{{1040.tax_name}}",
+        "tax_type": "{{1040.tax_type}}",
+        "purchase_rate": "{{1040.purchase_rate}}",
+        "tax_percentage": "{{1040.tax_percentage}}",
+        "purchase_account_id": "{{1040.purchase_account_id}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 2400,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1040
+      }
+    },
+    {
+      "id": 1042,
+      "mapper": {
+        "limit": "150",
+        "method": "custom",
+        "search": [
+          [
+            {
+              "a": "name",
+              "b": "{{if(length(1041.array) > 0; if(lower(trim(get(split(1002.value; \"|\"); 2))) = \"none\"; \"ZZZNOMATCHZZZ\"; substring(trim(get(split(1002.value; \"|\"); 2)); 0; 40)); if(lower(trim(get(split(1002.value; \"|\"); 3))) != \"none\"; substring(trim(get(split(1002.value; \"|\"); 3)); 0; 40); if(lower(trim(get(split(1002.value; \"|\"); 2))) = \"none\"; \"ZZZNOMATCHZZZ\"; substring(trim(get(split(1002.value; \"|\"); 2)); 0; 40))))}}",
+              "o": "_contains"
+            }
+          ]
+        ],
+        "sort_column": "name",
+        "organization_id": "YOUR_ZOHO_ORG_ID"
+      },
+      "module": "zoho-books:listItems",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 2550,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "__IMTCONN__": 0
+      }
+    },
+    {
+      "id": 1043,
+      "filter": {
+        "name": "Active items only",
+        "conditions": [
+          [
+            {
+              "a": "{{1042.status}}",
+              "b": "active",
+              "o": "text:equal"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "ref": "B{{1042.__IMTINDEX__}}",
+        "line": "B{{1042.__IMTINDEX__}} | {{1042.name}} | sku={{1042.sku}} | rate={{1042.rate}} | tax={{1042.tax_percentage}} | hsn={{1042.hsn_or_sac}} | brand={{1042.cf_brand}} | mrp={{1042.cf_mrp}} | id={{1042.item_id}} | created={{substring(1042.created_time; 0; 10)}}",
+        "name": "{{1042.name}}",
+        "tax_id": "{{1042.tax_id}}",
+        "item_id": "{{1042.item_id}}",
+        "tax_name": "{{1042.tax_name}}",
+        "tax_type": "{{1042.tax_type}}",
+        "purchase_rate": "{{1042.purchase_rate}}",
+        "tax_percentage": "{{1042.tax_percentage}}",
+        "purchase_account_id": "{{1042.purchase_account_id}}"
+      },
+      "module": "builtin:BasicAggregator",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 2700,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "feeder": 1042
+      }
+    },
+    {
+      "id": 1044,
+      "mapper": {
+        "input": "ORDER CONTEXT: {{ifempty(1000.information.order_context; \"(none)\")}}\nBRAND HINT (soft preference only, see rule 9): {{ifempty(1000.information.brand_hint; \"(none)\")}}\nORDER LINE: {{1002.value}}\n\nCANDIDATE ITEMS (Zoho catalog search results, one per line):\n{{ifempty(join(merge(map(1041.array; \"line\"); map(1043.array; \"line\")); \"\\n\"); \"(no candidates)\")}}\n\nYou are the ITEM COMPARATOR of a sales-order automation. The parser has already structured the customer's order line and the Zoho catalog search has returned CANDIDATE items. Decide which candidate, if any, is the item the customer ordered. Candidates are the ONLY valid answers; never invent an item and never answer with a name or id that is not in the list.\n\nORDER LINE FORMAT: term_a|term_b|term_c|product_text|package_size|normalized_size|quantity  (NONE = not given).\nCANDIDATE FORMAT: ref | name | sku | rate | tax | hsn | brand | mrp | id | created.\n\nDECISIONS\n- MATCHED: exactly one meaningful product remains after all rules below.\n- AMBIGUOUS: two or more different products remain plausible, or the only remaining candidate adds an unrequested flavour/variant (see rule 6). Never guess.\n- NOT_FOUND: no candidate is valid, including when the ordered size does not exist among the otherwise matching candidates.\n\nRULES\n1. SIZE HAS TWO MODES.\n   SIZE PROVIDED (package_size is not NONE): the size is a hard constraint. Read the size stated in each candidate name (units normalised: g = gm = gms = gram; 1 kg = 1000 g; l = ltr = 1000 ml) and compare it with normalized_size. A candidate with a different size is invalid even if its name matches perfectly; never substitute a nearby size (900 gm is not 1 kg, 700 gm is not 750 gm). If no candidate has the ordered size answer NOT_FOUND - but before you do, re-scan EVERY candidate name for the ordered size written in any form ('1 Kg', '1kg', '1000 g') together with the product words; answering NOT_FOUND while such a candidate is in the list is an error. A candidate with the exact size and a good product match beats a candidate with a better name and the wrong size.\n   SIZE NOT PROVIDED (package_size is NONE): size is neutral. Do NOT reject candidates because of their size and do not invent a size. Decide on product identity only: if exactly one meaningful product remains, MATCHED; if the same product exists in several sizes or several different products remain, AMBIGUOUS.\n2. The quantity (last field of the order line) is never part of the product identity; ignore it completely when comparing names. Numbers and units inside product_text (for example '28gm' in 'Protein Muesli 28gm') belong to the product identity, not to the package size. If a candidate contains such a token prefer it; if no candidate contains it, treat it as descriptive, match on the other words plus the package size, and say so in reason.\n3. Every word the customer typed is a REQUIRED attribute. If the customer typed a distinguishing modifier such as High Protein, Sugar Free, Kids, Dark Chocolate, Fruit & Nut, No Added Sugar, a flavour or an ingredient, candidates that lack it are mismatches, not merely lower-ranked. Typing mistakes and abbreviations are accepted only when a candidate confirms them (charcol = charcoal, berri = berry/berries, NAS = No Added Sugar, BT = B.T.). Do not correct a word into something that no candidate contains.\n4. Candidate-only words: neutral text (brand name, MRP/price, SKU-like codes, size, 'New', 'Pack of 1') never counts against a candidate. Special or promotional listings (names containing OFF, MRP, offline, discount, combo, sampler, free gift, offer, 'New') and legacy abbreviated duplicates (names that start with a short brand abbreviation, for example 'AF ' for Acme Foods) are used ONLY when no clean regular listing of the same product and size exists; if a clean regular listing exists it wins and the promotional ones are ignored, not counted as competing products. Rate differences caused by such promotional listings do not create ambiguity. A candidate-only INGREDIENT or TYPE word that the customer did not type and that is not implied by what they did type - for example the candidate adds 'Seeds', 'Chia', 'Flax', 'Whole', 'Diet', 'Kids', 'Baby' on top of a plain product the customer asked for - is treated exactly like an unrequested flavour under rule 6, never silently accepted. Distinguishing modifiers the customer did NOT type (a flavour, High Protein, Kids, Baby, Sugar Free, Savoury, Whole, Organic ...) are meaningful mismatches: prefer a candidate without them, for example 'High Protein Oats 400gm' should choose a plain 'High Protein Oats 400gm' over 'High Protein Oats Dark Chocolate 400gm' when both exist. A word that merely refines what the customer typed (customer 'Chocolate', catalog 'Dark Chocolate') is not a mismatch.\n5. RANK candidates by: (1) explicit package size, (2) product identity, (3) variant/flavour, (4) key words, (5) brand or category when useful, (6) typo tolerance, (7) extra or missing words. Retrieving many candidates is normal; what matters is choosing the right one among them.\n6. If the best remaining candidate carries a distinguishing flavour/variant/ingredient that the customer did NOT type and no plain listing exists, do not select it silently: answer AMBIGUOUS, list it in alternatives, and say so in reason.\n7. DUPLICATES. Candidates with the same id are one and the same item returned by two searches: count it once and do not mention it as a duplicate. Candidates with different ids that have the same name after ignoring case, spacing and punctuation may be duplicate listings of one product. Compare sku, rate, tax, hsn, brand, mrp and the name. If they are equivalent for billing (same rate, tax, hsn, brand, mrp and no conflicting sku), answer MATCHED, choose the listing with the earliest created date (the original), and explain in duplicate_note exactly why it is equivalent and why that one was chosen. If any of these fields differs materially, answer AMBIGUOUS and say what differs. Never pick a duplicate just because it is listed first.\n8. Ignore candidates whose name contains the word 'Inactive'. If the list is empty or says '(no candidates)', answer NOT_FOUND.\n9. order_context, when given, may only be used to exclude candidates of a clearly different product category; if two or more remain, answer AMBIGUOUS. BRAND HINT, when given, is a SOFT preference only: among candidates that already satisfy rules 1-4 equally, prefer the one whose brand/name contains the hinted brand; it can never promote a candidate that fails size, required words, or adds an unrequested modifier.\n10. CATEGORY CHECK. Apply rules 1-4 first and drop every candidate they reject; rejected candidates must never be listed as alternatives. Only if the SURVIVING candidates are genuinely different kinds of product (for example a toothbrush vs a bar of soap vs an oil, or a food item vs a cosmetic) and the order line's words do not say which kind is wanted, answer AMBIGUOUS and list the different kinds in alternatives. Differences in pack count ('Pack of 2'), size, colour or age group (adult/kids) are NOT different categories - handle those with rules 1-7. Apply rules 4 and 6 to every line independently and consistently: the same unrequested extra word (for example 'Seeds') must produce the same decision at 400gm and at 1kg.\n11. confidence: HIGH only when exactly one product remains and name, variant and (if given) size all agree without any assumption. MEDIUM when a typing-mistake, abbreviation, ignored token or duplicate resolution was needed. LOW otherwise. MATCHED must have HIGH or MEDIUM.\n12. chosen_ref: the ref (for example A3) of the selected candidate, empty unless MATCHED. alternatives: up to 3 refs with names, separated by ' || ', when AMBIGUOUS. reason: one short sentence naming the deciding signals.",
+        "fields": [
+          {
+            "name": "decision",
+            "type": "string",
+            "description": "Exactly one of: MATCHED, AMBIGUOUS, NOT_FOUND"
+          },
+          {
+            "name": "chosen_ref",
+            "type": "string",
+            "description": "Ref of the selected candidate (for example A3) when MATCHED, otherwise empty"
+          },
+          {
+            "name": "confidence",
+            "type": "string",
+            "description": "Exactly one of: HIGH, MEDIUM, LOW"
+          },
+          {
+            "name": "size_mode",
+            "type": "string",
+            "description": "SIZE_PROVIDED or SIZE_NOT_PROVIDED"
+          },
+          {
+            "name": "alternatives",
+            "type": "string",
+            "description": "When AMBIGUOUS up to 3 refs with names separated by ' || ', otherwise empty"
+          },
+          {
+            "name": "duplicate_note",
+            "type": "string",
+            "description": "If duplicate listings were compared, why they are equivalent and why one was chosen (or what differs); otherwise empty"
+          },
+          {
+            "name": "reason",
+            "type": "string",
+            "description": "One short sentence: which signals decided"
+          }
+        ]
+      },
+      "module": "ai-tools:Extract",
+      "version": 2,
+      "metadata": {
+        "designer": {
+          "x": 2850,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "model": "large",
+        "makeConnectionId": 0
+      }
+    },
+    {
+      "id": 1019,
+      "mapper": {
+        "key": "DRYl_{{1001.shop_name}}_{{trim(get(split(1002.value; \"|\"); 4))}}_{{trim(get(split(1002.value; \"|\"); 5))}}",
+        "data": {
+          "c1": "{{1002.value}}",
+          "c2": "{{if(lower(trim(first(split(1002.value; \"|\")))) = \"none\"; \"ZZZNOMATCHZZZ\"; substring(trim(first(split(1002.value; \"|\"))); 0; 40)) + \" ## \" + if(length(1041.array) > 0; if(lower(trim(get(split(1002.value; \"|\"); 2))) = \"none\"; \"ZZZNOMATCHZZZ\"; substring(trim(get(split(1002.value; \"|\"); 2)); 0; 40)); if(lower(trim(get(split(1002.value; \"|\"); 3))) != \"none\"; substring(trim(get(split(1002.value; \"|\"); 3)); 0; 40); if(lower(trim(get(split(1002.value; \"|\"); 2))) = \"none\"; \"ZZZNOMATCHZZZ\"; substring(trim(get(split(1002.value; \"|\"); 2)); 0; 40))))}}",
+          "c3": "{{\"A=\"+length(1041.array)+\" B=\"+length(1043.array)}}",
+          "c4": "{{ifempty(join(merge(map(1041.array; \"name\"); map(1043.array; \"name\")); \" ## \"); \"(none)\")}}",
+          "c5": "{{1044.information.decision + \" / \" + 1044.information.confidence + \" / \" + 1044.information.size_mode}}",
+          "c6": "{{if(1044.information.decision = \"MATCHED\"; ifempty(first(map(1041.array; \"name\"; \"ref\"; trim(1044.information.chosen_ref))); first(map(1043.array; \"name\"; \"ref\"; trim(1044.information.chosen_ref)))); \"\")}}",
+          "c7": "{{1044.information.reason + \" || dup: \" + 1044.information.duplicate_note}}",
+          "c8": "{{1044.information.alternatives}}",
+          "c9": "{{trim(last(split(1002.value; \"|\")))}}",
+          "run": "DRY",
+          "seq": "{{1002.i}}",
+          "kind": "line"
+        },
+        "overwrite": true
+      },
+      "module": "datastore:AddRecord",
+      "version": 1,
+      "metadata": {
+        "designer": {
+          "x": 3000,
+          "y": 0
+        }
+      },
+      "parameters": {
+        "datastore": 0
+      }
+    }
+  ]
+}
