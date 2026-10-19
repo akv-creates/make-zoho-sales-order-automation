@@ -76,4 +76,4 @@ Start with the dry-run. When you trust its answers on *your* products, switch on
   proves them on your data.
 
 Built for an FMCG distributor (many similar products, typos, long orders), but it works for any catalog
-where orders arrive as free text. Questions or fixes welcome via GitHub issues.
+where orders arrive as free text. Questions or fixes welcome via GitHub issues. Licensed under the [MIT License](LICENSE).

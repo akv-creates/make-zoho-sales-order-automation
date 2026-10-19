@@ -36,4 +36,4 @@ Make's built-in *AI Tools → Extract* (large model option). You can change the 
 Because a wrongly billed product costs more than a line in the review sheet. "I'm not sure" is a feature.
 
 **Can I share/modify this?**
-The repository has no licence file yet, so by default others can read but not reuse it; the owner can add one.
+Yes. It is released under the [MIT License](../LICENSE): use, copy, modify and share it freely, including commercially. It comes with no warranty; test on your own data first.
